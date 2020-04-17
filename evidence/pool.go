@@ -88,13 +88,8 @@ func (evpool *Pool) SetLogger(l log.Logger) {
 	evpool.logger = l
 }
 
-// PriorityEvidence returns the priority evidence.
-func (evpool *Pool) PriorityEvidence() []types.Evidence {
-	return evpool.store.PriorityEvidence()
-}
-
 // PendingEvidence returns up to maxNum uncommitted evidence.
-// If maxNum is -1, all evidence is returned.
+// If maxNum is -1, all evidence is returned. Pending evidence is in order of priority
 func (evpool *Pool) PendingEvidence(maxNum int64) []types.Evidence {
 	return evpool.store.PendingEvidence(maxNum)
 }
@@ -160,7 +155,11 @@ func (evpool *Pool) AddEvidence(evidence types.Evidence) error {
 	}
 
 	for _, ev := range evList {
-		if evpool.store.Has(evidence) {
+		ok, err := evpool.store.Has(evidence)
+		if err != nil {
+			return ErrDatabase{err}
+		}
+		if ok {
 			return ErrEvidenceAlreadyStored{}
 		}
 
@@ -184,9 +183,9 @@ func (evpool *Pool) AddEvidence(evidence types.Evidence) error {
 		priority := val.VotingPower
 
 		// 3) Save to store.
-		_, err := evpool.store.AddNewEvidence(ev, priority)
+		err = evpool.store.addEvidence(ev, priority)
 		if err != nil {
-			return fmt.Errorf("failed to add new evidence %v: %w", ev, err)
+			return ErrDatabase{err}
 		}
 
 		// 4) Add evidence to clist.
