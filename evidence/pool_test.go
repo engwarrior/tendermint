@@ -184,6 +184,32 @@ func TestEvidencePoolNewPool(t *testing.T) {
 	assert.EqualValues(t, 0, pool.ValidatorLastHeight([]byte("non-existent-validator")))
 }
 
+func TestRecoverPendingEvidence(t *testing.T) {
+	var (
+		valAddr      = []byte("val1")
+		height       = int64(100002)
+		stateDB      = initializeValidatorState(valAddr, height)
+		evidenceDB   = dbm.NewMemDB()
+		blockStoreDB = dbm.NewMemDB()
+		blockStore   = store.NewBlockStore(blockStoreDB)
+
+		evidence = types.NewMockEvidence(height, time.Now(), 0, valAddr)
+	)
+
+	key := keyPending(evidence)
+	ei := Info{
+		Committed: false,
+		Priority:  1,
+		Evidence:  evidence,
+	}
+	eiBytes := cdc.MustMarshalBinaryBare(ei)
+	_ = evidenceDB.Set(key, eiBytes)
+	pool, err := NewPool(stateDB, evidenceDB, blockStore)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, pool.evidenceList.Len())
+}
+
 func initializeValidatorState(valAddr []byte, height int64) dbm.DB {
 	stateDB := dbm.NewMemDB()
 
