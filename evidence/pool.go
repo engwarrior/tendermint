@@ -43,21 +43,14 @@ func NewPool(stateDB, evidenceDB dbm.DB, blockStore *store.BlockStore) (*Pool, e
 	var (
 		evidenceStore = NewStore(evidenceDB)
 		state         = sm.LoadState(stateDB)
-		evidenceList  = clist.New()
 	)
-
-	// if pending evidence already in db, in event of prior failure, then load it to the evidenceList
-	evList := evidenceStore.listEvidence(baseKeyPending, -1)
-	for _, ev := range evList {
-		evidenceList.PushBack(ev)
-	}
 
 	valToLastHeight, err := buildValToLastHeightMap(state, stateDB, blockStore)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Pool{
+	pool := &Pool{
 		stateDB:         stateDB,
 		blockStore:      blockStore,
 		state:           state,
@@ -66,6 +59,20 @@ func NewPool(stateDB, evidenceDB dbm.DB, blockStore *store.BlockStore) (*Pool, e
 		evidenceList:    evidenceList,
 		valToLastHeight: valToLastHeight,
 	}
+
+	// if pending evidence already in db, in event of prior failure, then load it to the evidenceList
+	evList := evidenceStore.listEvidence(baseKeyPending, -1)
+	for _, ev := range evList {
+		// check evidence hasn't expired
+		if pool.IsExpired(ev) {
+			key := keyPending(ev)
+			pool.store.db.Delete(key)
+			continue
+		}
+		pool.evidenceList.PushBack(ev)
+	}
+
+	return pool, nil
 }
 
 func (evpool *Pool) EvidenceFront() *clist.CElement {
