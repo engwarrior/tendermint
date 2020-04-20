@@ -317,12 +317,11 @@ max_tx_bytes = {{ .Mempool.MaxTxBytes }}
 
 ##### state sync configuration options #####
 [statesync]
-# Whether to enable state sync. This bootstraps a new node by discovering and fetching and
-# restoring a state machine snapshot from peers and restoring it instead of fetching and replaying
-# historical blocks. Requires some peers in the network to take and serve state machine snapshots.
-# If the node has local state (LastBlockHeight > 0), state sync will be skipped.
-#
-# The node will have a truncated block history, starting from the height of the snapshot. 
+# State sync rapidly bootstraps a new node by discovering, fetching, and restoring a state machine
+# snapshot from peers instead of fetching and replaying historical blocks. Requires some peers in
+# the network to take and serve state machine snapshots. State sync is not attempted if the node
+# has any local state (LastBlockHeight > 0). The node will have a truncated block history,
+# starting from the height of the snapshot.
 enable = {{ .StateSync.Enable }}
 
 # RPC servers (comma-separated) for light client verification of the synced state machine and
