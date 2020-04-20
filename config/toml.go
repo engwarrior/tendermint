@@ -315,6 +315,27 @@ cache_size = {{ .Mempool.CacheSize }}
 # NOTE: the max size of a tx transmitted over the network is {max_tx_bytes} + {amino overhead}.
 max_tx_bytes = {{ .Mempool.MaxTxBytes }}
 
+##### state sync configuration options #####
+[statesync]
+# Whether to enable state sync. This bootstraps a new node by discovering and fetching and
+# restoring a state machine snapshot from peers and restoring it instead of fetching and replaying
+# historical blocks. Requires some peers in the network to take and serve state machine snapshots.
+# If the node has local state (LastBlockHeight > 0), state sync will be skipped.
+#
+# The node will have a truncated block history, starting from the height of the snapshot. 
+enable = {{ .StateSync.Enable }}
+
+# RPC servers (comma-separated) for light client verification of the synced state machine and
+# retrieval of state data for node bootstrapping. Also needs a trusted height and corresponding
+# header hash obtained from a trusted source, and a period during which validators can be trusted.
+#
+# For Cosmos SDK-based chains, trust_period should usually be about 2/3 of the unbonding time (~2
+# weeks) during which they can be financially punished (slashed) for misbehavior.
+rpc_servers = ""
+trust_height = {{ .StateSync.TrustHeight }}
+trust_hash = "{{ .StateSync.TrustHash }}"
+trust_period = "{{ .StateSync.TrustPeriod }}"
+
 ##### fast sync configuration options #####
 [fastsync]
 
