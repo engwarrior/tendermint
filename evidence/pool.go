@@ -212,10 +212,7 @@ func (evpool *Pool) MarkEvidenceAsCommitted(height int64, lastBlockTime time.Tim
 		}
 		// if pending, remove from that bucket, remember not all evidence has been seen before
 		if evpool.IsPending(ev) {
-			key := keyPending(ev)
-			if err := evpool.evidenceStore.Delete(key); err != nil {
-				evpool.logger.Error("Unable to delete pending evidence", "err", err)
-			}
+			evpool.removePendingEvidence(ev)
 			blockEvidenceMap[evMapKey(ev)] = struct{}{}
 		}
 	}
@@ -245,6 +242,13 @@ func (evpool *Pool) IsPending(evidence types.Evidence) bool {
 		evpool.logger.Error("Unable to find pending evidence", "err", err)
 	}
 	return ok
+}
+
+func (evpool *Pool) removePendingEvidence(evidence types.Evidence) {
+	key := keyPending(evidence)
+	if err := evpool.evidenceStore.Delete(key); err != nil {
+		evpool.logger.Error("Unable to delete pending evidence", "err", err)
+	}
 }
 
 func (evpool *Pool) EvidenceFront() *clist.CElement {
@@ -383,12 +387,12 @@ func (evpool *Pool) listEvidence(prefixKey byte, maxNum int64) (evidence []types
 		}
 		count++
 
-		var ei Info
-		err := cdc.UnmarshalBinaryBare(val, &ei)
+		var ev types.Evidence
+		err := cdc.UnmarshalBinaryBare(val, &ev)
 		if err != nil {
 			panic(err)
 		}
-		evidence = append(evidence, ei.Evidence)
+		evidence = append(evidence, ev)
 	}
 	return evidence
 }
@@ -462,11 +466,11 @@ func bE(h int64) string {
 }
 
 func keyCommitted(evidence types.Evidence) []byte {
-	return append([]byte(baseKeyCommitted), keySuffix(evidence)...)
+	return append([]byte{baseKeyCommitted}, keySuffix(evidence)...)
 }
 
 func keyPending(evidence types.Evidence) []byte {
-	return append([]byte(baseKeyPending), keySuffix(evidence)...)
+	return append([]byte{baseKeyPending}, keySuffix(evidence)...)
 }
 
 func keySuffix(evidence types.Evidence) []byte {
