@@ -60,7 +60,7 @@ func NewPool(stateDB, evidenceDB dbm.DB, blockStore *store.BlockStore) (*Pool, e
 		state:           state,
 		logger:          log.NewNopLogger(),
 		evidenceStore:   evidenceDB,
-		evidenceList:    evidenceList,
+		evidenceList:    clist.New(),
 		valToLastHeight: valToLastHeight,
 	}
 
@@ -221,7 +221,7 @@ func (evpool *Pool) MarkEvidenceAsCommitted(height int64, lastBlockTime time.Tim
 	}
 }
 
-// Checks whether the evidence has already been committed. DB errors are passed to the logger.
+// IsCommitted returns true if we have already seen this exact evidence and it is already marked as committed.
 func (evpool *Pool) IsCommitted(evidence types.Evidence) bool {
 	key := keyCommitted(evidence)
 	ok, err := evpool.evidenceStore.Has(key)
@@ -252,6 +252,18 @@ func (evpool *Pool) EvidenceWaitChan() <-chan struct{} {
 // SetLogger sets the Logger.
 func (evpool *Pool) SetLogger(l log.Logger) {
 	evpool.logger = l
+}
+
+// ValidatorLastHeight returns the last height of the validator w/ the
+// given address. 0 - if address never was a validator or was such a
+// long time ago (> ConsensusParams.Evidence.MaxAgeDuration && >
+// ConsensusParams.Evidence.MaxAgeNumBlocks).
+func (evpool *Pool) ValidatorLastHeight(address []byte) int64 {
+	h, ok := evpool.valToLastHeight[string(address)]
+	if !ok {
+		return 0
+	}
+	return h
 }
 
 // State returns the current state of the evpool.

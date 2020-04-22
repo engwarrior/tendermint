@@ -217,8 +217,8 @@ func TestRecoverPendingEvidence(t *testing.T) {
 	expiredKey := keyPending(expiredEvidence)
 	expiredEiBytes := cdc.MustMarshalBinaryBare(expiredEvidence)
 	_ = evidenceDB.Set(expiredKey, expiredEiBytes)
-	pool := NewPool(stateDB, evidenceDB, blockStore)
-
+	pool, err := NewPool(stateDB, evidenceDB, blockStore)
+	require.NoError(t, err)
 	assert.Equal(t, 1, pool.evidenceList.Len())
 	assert.True(t, pool.IsPending(goodEvidence))
 }
