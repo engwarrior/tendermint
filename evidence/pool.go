@@ -172,23 +172,6 @@ func (evpool *Pool) AddEvidence(evidence types.Evidence) error {
 	return nil
 }
 
-// Evaluates whether the evidence has expired
-// FIXME: To be replaced by the ValToLastHeight map
-func (evpool *Pool) IsExpired(evidence types.Evidence) bool {
-	var (
-		params       = evpool.State().ConsensusParams.Evidence
-		ageDuration  = evpool.State().LastBlockTime.Sub(evidence.Time())
-		ageNumBlocks = evpool.State().LastBlockHeight - evidence.Height()
-	)
-	return ageNumBlocks > params.MaxAgeNumBlocks &&
-		ageDuration > params.MaxAgeDuration
-}
-
-// Has checks if the evidence is already stored
-func (evpool *Pool) Has(evidence types.Evidence) bool {
-	return evpool.IsPending(evidence) || evpool.IsCommitted(evidence)
-}
-
 // MarkEvidenceAsCommitted marks all the evidence as committed and removes it
 // from the queue.
 func (evpool *Pool) MarkEvidenceAsCommitted(height int64, lastBlockTime time.Time, evidence []types.Evidence) {
@@ -219,6 +202,20 @@ func (evpool *Pool) MarkEvidenceAsCommitted(height int64, lastBlockTime time.Tim
 		evidenceParams := evpool.State().ConsensusParams.Evidence
 		evpool.removeEvidenceFromList(height, lastBlockTime, evidenceParams, blockEvidenceMap)
 	}
+}
+
+func (evpool *Pool) Has(evidence types.Evidence) bool {
+	return evpool.IsPending(evidence) || evpool.IsCommitted(evidence)
+}
+
+func (evpool *Pool) IsExpired(evidence types.Evidence) bool {
+	var (
+		params       = evpool.State().ConsensusParams.Evidence
+		ageDuration  = evpool.State().LastBlockTime.Sub(evidence.Time())
+		ageNumBlocks = evpool.State().LastBlockHeight - evidence.Height()
+	)
+	return ageNumBlocks > params.MaxAgeNumBlocks &&
+		ageDuration > params.MaxAgeDuration
 }
 
 // IsCommitted returns true if we have already seen this exact evidence and it is already marked as committed.
@@ -308,12 +305,12 @@ func (evpool *Pool) listEvidence(prefixKey byte, maxNum int64) (evidence []types
 		}
 		count++
 
-		var ei Info
-		err := cdc.UnmarshalBinaryBare(val, &ei)
+		var ev types.Evidence
+		err := cdc.UnmarshalBinaryBare(val, &ev)
 		if err != nil {
 			panic(err)
 		}
-		evidence = append(evidence, ei.Evidence)
+		evidence = append(evidence, ev)
 	}
 	return evidence
 }
@@ -366,49 +363,7 @@ func (evpool *Pool) updateValToLastHeight(blockHeight int64, state sm.State) {
 	}
 }
 
-func (evpool *Pool) IsExpired(evidence types.Evidence) bool {
-	var (
-		params       = evpool.State().ConsensusParams.Evidence
-		ageDuration  = evpool.State().LastBlockTime.Sub(evidence.Time())
-		ageNumBlocks = evpool.State().LastBlockHeight - evidence.Height()
-	)
-	return ageNumBlocks > params.MaxAgeNumBlocks &&
-		ageDuration > params.MaxAgeDuration
-}
-
-// listEvidence lists up to maxNum pieces of evidence for the given prefix key.
-// It is wrapped by PriorityEvidence and PendingEvidence for convenience.
-// If maxNum is -1, there's no cap on the size of returned evidence.
-func (evpool *Pool) listEvidence(prefixKey byte, maxNum int64) (evidence []types.Evidence) {
-	var count int64
-	iter, err := dbm.IteratePrefix(evpool.evidenceStore, []byte{prefixKey})
-	if err != nil {
-		panic(err)
-	}
-	defer iter.Close()
-	for ; iter.Valid(); iter.Next() {
-		val := iter.Value()
-
-		if count == maxNum {
-			return evidence
-		}
-		count++
-
-		var ev types.Evidence
-		err := cdc.UnmarshalBinaryBare(val, &ev)
-		if err != nil {
-			panic(err)
-		}
-		evidence = append(evidence, ev)
-	}
-	return evidence
-}
-
-func evMapKey(ev types.Evidence) string {
-	return string(ev.Hash())
-}
-
-func buildValToLastHeightMap(state sm.State, stateDB dbm.DB) valToLastHeightMap {
+func buildValToLastHeightMap(state sm.State, stateDB dbm.DB, blockStore *store.BlockStore) (valToLastHeightMap, error) {
 	var (
 		valToLastHeight = make(map[string]int64)
 		params          = state.ConsensusParams.Evidence

@@ -16,11 +16,10 @@ import (
 const (
 	EvidenceChannel = byte(0x38)
 
-	maxMsgSize = 24576 // 24KB  - 50 pieces of evidence per msg TODO make it configurable
+	maxMsgSize = 1048576 // 1MB TODO make it configurable
 
-	// interval with which the reactor will attempt to broadcast evidence. This also means
-	// the max time between
-	broadcastEvidenceIntervalS = 1
+	broadcastEvidenceIntervalS = 60  // broadcast uncommitted evidence this often
+	peerCatchupSleepIntervalMS = 100 // If peer is behind, sleep this amount
 )
 
 // Reactor handles evpool evidence broadcasting amongst peers.
@@ -113,7 +112,6 @@ func (evR *Reactor) SetEventBus(b *types.EventBus) {
 // start iterating from the beginning again.
 func (evR *Reactor) broadcastEvidenceRoutine(peer p2p.Peer) {
 	var next *clist.CElement
-	messageSize := int(maxMsgSize / types.MaxEvidenceBytes)
 	for {
 		// This happens because the CElement we were looking at got garbage
 		// collected (removed). That is, .NextWait() returned nil. Go ahead and
@@ -131,55 +129,90 @@ func (evR *Reactor) broadcastEvidenceRoutine(peer p2p.Peer) {
 			}
 		}
 
-		peerState, ok := peer.Get(types.PeerStateKey).(PeerState)
-		if !ok {
-			// Peer does not have a state yet. We set it in the consensus reactor, but
-			// when we add peer in Switch, the order we call reactors#AddPeer is
-			// different every time due to us using a map. Sometimes other reactors
-			// will be initialized before the consensus reactor. We should wait a few
-			// milliseconds and retry.
-			time.Sleep(broadcastEvidenceIntervalS * time.Second)
+		ev := next.Value.(types.Evidence)
+		msg, retry := evR.checkSendEvidenceMessage(peer, ev)
+		if msg != nil {
+			success := peer.Send(EvidenceChannel, cdc.MustMarshalBinaryBare(msg))
+			retry = !success
+		}
+
+		if retry {
+			time.Sleep(peerCatchupSleepIntervalMS * time.Millisecond)
 			continue
 		}
 
-		var evMsg ListMessage
-		for next != nil && len(evMsg.Evidence) < messageSize {
-			ev := next.Value.(types.Evidence)
-			// check to see if peer is behind, if so jump to next piece of evidence
-			if ev.Height() <= peerState.GetHeight() {
-				// check that the evidence has not expired else remove it
-				if evR.evpool.IsExpired(ev) {
-					evR.evpool.removePendingEvidence(ev)
-					evR.evpool.evidenceList.Remove(next)
-					next.DetachPrev()
-				} else {
-					evMsg.Evidence = append(evMsg.Evidence, ev)
-				}
-			}
-			// As evidence arrives in batches, wait for a period to see if there is
-			// more evidence to come, if not then finish the msg and send it to the peer.
-			// (10ms is the allocated time for each loop of AddEvidence)
-			afterCh := time.After(time.Millisecond * 10)
-			select {
-			case <-afterCh:
-				next = nil
-			case <-next.NextWaitChan():
-				next = next.Next()
-			case <-peer.Quit():
-				return
-			case <-evR.Quit():
-				return
-			}
+		afterCh := time.After(time.Second * broadcastEvidenceIntervalS)
+		select {
+		case <-afterCh:
+			// start from the beginning every tick.
+			// TODO: only do this if we're at the end of the list!
+			next = nil
+		case <-next.NextWaitChan():
+			// see the start of the for loop for nil check
+			next = next.Next()
+		case <-peer.Quit():
+			return
+		case <-evR.Quit():
+			return
 		}
-
-		success := peer.Send(EvidenceChannel, cdc.MustMarshalBinaryBare(evMsg))
-
-		// if failed to send then wait before trying again
-		if next == nil || !success {
-			time.Sleep(broadcastEvidenceIntervalS * time.Second)
-		}
-
 	}
+}
+
+// Returns the message to send the peer, or nil if the evidence is invalid for the peer.
+// If message is nil, return true if we should sleep and try again.
+func (evR Reactor) checkSendEvidenceMessage(
+	peer p2p.Peer,
+	ev types.Evidence,
+) (msg Message, retry bool) {
+
+	// make sure the peer is up to date
+	evHeight := ev.Height()
+	peerState, ok := peer.Get(types.PeerStateKey).(PeerState)
+	if !ok {
+		// Peer does not have a state yet. We set it in the consensus reactor, but
+		// when we add peer in Switch, the order we call reactors#AddPeer is
+		// different every time due to us using a map. Sometimes other reactors
+		// will be initialized before the consensus reactor. We should wait a few
+		// milliseconds and retry.
+		return nil, true
+	}
+
+	// NOTE: We only send evidence to peers where
+	// peerHeight - maxAge < evidenceHeight < peerHeight
+	// and
+	// lastBlockTime - maxDuration < evidenceTime
+	var (
+		peerHeight = peerState.GetHeight()
+
+		params = evR.evpool.State().ConsensusParams.Evidence
+
+		ageDuration  = evR.evpool.State().LastBlockTime.Sub(ev.Time())
+		ageNumBlocks = peerHeight - evHeight
+	)
+
+	if peerHeight < evHeight { // peer is behind. sleep while he catches up
+		return nil, true
+	} else if ageNumBlocks > params.MaxAgeNumBlocks &&
+		ageDuration > params.MaxAgeDuration { // evidence is too old, skip
+
+		// NOTE: if evidence is too old for an honest peer, then we're behind and
+		// either it already got committed or it never will!
+		evR.Logger.Info("Not sending peer old evidence",
+			"peerHeight", peerHeight,
+			"evHeight", evHeight,
+			"maxAgeNumBlocks", params.MaxAgeNumBlocks,
+			"lastBlockTime", evR.evpool.State().LastBlockTime,
+			"evTime", ev.Time(),
+			"maxAgeDuration", params.MaxAgeDuration,
+			"peer", peer,
+		)
+
+		return nil, false
+	}
+
+	// send evidence
+	msg = &ListMessage{[]types.Evidence{ev}}
+	return msg, false
 }
 
 // PeerState describes the state of a peer.
