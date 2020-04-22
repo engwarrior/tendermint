@@ -598,7 +598,11 @@ func startStateSync(ssR *statesync.Reactor, bcR fastSyncReactor, conR *consensus
 			ssR.Logger.Error("Failed to bootstrap node with new state", "err", err)
 			return
 		}
-		blockStore.SaveSeenCommit(state.LastBlockHeight, commit)
+		err = blockStore.SaveSeenCommit(state.LastBlockHeight, commit)
+		if err != nil {
+			ssR.Logger.Error("Failed to store last seen commit", "err", err)
+			return
+		}
 
 		if fastSync {
 			// FIXME Very ugly to have these metrics bleed through here.

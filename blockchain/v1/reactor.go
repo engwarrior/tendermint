@@ -44,7 +44,7 @@ var (
 type consensusReactor interface {
 	// for when we switch from blockchain reactor and fast sync to
 	// the consensus machine
-	SwitchToConsensus(sm.State, bool)
+	SwitchToConsensus(state sm.State, skipWAL bool)
 }
 
 // BlockchainReactor handles long-term catchup syncing.

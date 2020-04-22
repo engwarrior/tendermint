@@ -37,7 +37,7 @@ const (
 type consensusReactor interface {
 	// for when we switch from blockchain reactor and fast sync to
 	// the consensus machine
-	SwitchToConsensus(state.State, bool)
+	SwitchToConsensus(state state.State, skipWAL bool)
 }
 
 func (sio *switchIO) sendBlockRequest(peerID p2p.ID, height int64) error {

@@ -55,7 +55,6 @@ func newSyncer(logger log.Logger, conn proxy.AppConnSnapshot, connQuery proxy.Ap
 		conn:        conn,
 		connQuery:   connQuery,
 		snapshots:   newSnapshotPool(stateSource),
-		chunks:      nil,
 	}
 }
 
