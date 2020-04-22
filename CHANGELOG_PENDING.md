@@ -16,6 +16,8 @@ Friendly reminder, we have a [bug bounty program](https://hackerone.com/tendermi
 
 - Go API
 
+  - [crypto] [\#4721](https://github.com/tendermint/tendermint/pull/4721) Remove `SimpleHashFromMap()` and `SimpleProofsFromMap()` (@erikgrinaker)
+
 ### FEATURES:
 
 - [evidence] [\#4532](https://github.com/tendermint/tendermint/pull/4532) Handle evidence from light clients (@melekes)
