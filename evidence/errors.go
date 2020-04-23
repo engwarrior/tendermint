@@ -13,10 +13,11 @@ func (e ErrInvalidEvidence) Error() string {
 	return fmt.Sprintf("evidence is not valid: %v ", e.Reason)
 }
 
+// ErrDatabase passes on an error caused by the db
 type ErrDatabase struct {
-	DBErr error
+	Cause error
 }
 
 func (e ErrDatabase) Error() string {
-	return fmt.Sprintf("database error: %v", e.DBErr)
+	return fmt.Sprintf("database error: %v", e.Cause)
 }

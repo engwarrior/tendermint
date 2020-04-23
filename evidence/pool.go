@@ -65,7 +65,10 @@ func NewPool(stateDB, evidenceDB dbm.DB, blockStore *store.BlockStore) (*Pool, e
 	}
 
 	// if pending evidence already in db, in event of prior failure, then load it back to the evidenceList
-	evList := pool.listEvidence(baseKeyPending, -1)
+	evList, err := pool.listEvidence(baseKeyPending, -1)
+	if err != nil {
+		return nil, err
+	}
 	for _, ev := range evList {
 		// check evidence hasn't expired
 		if pool.IsExpired(ev) {
@@ -81,7 +84,11 @@ func NewPool(stateDB, evidenceDB dbm.DB, blockStore *store.BlockStore) (*Pool, e
 // PendingEvidence is used primarily as part of block proposal and returns up to maxNum of uncommitted evidence.
 // If maxNum is -1, all evidence is returned. Pending evidence is prioritised based on time.
 func (evpool *Pool) PendingEvidence(maxNum int64) []types.Evidence {
-	return evpool.listEvidence(baseKeyPending, maxNum)
+	evidence, err := evpool.listEvidence(baseKeyPending, maxNum)
+	if err != nil {
+		evpool.logger.Error("Unable to send pending evidence", "err", err)
+	}
+	return evidence
 }
 
 // Update uses the latest block to update the state, the ValToLastHeight map for evidence expiration
@@ -271,13 +278,9 @@ func (evpool *Pool) State() sm.State {
 }
 
 func (evpool *Pool) addPendingEvidence(evidence types.Evidence) error {
-	var err error
 	evBytes := cdc.MustMarshalBinaryBare(evidence)
 	key := keyPending(evidence)
-	if err = evpool.evidenceStore.Set(key, evBytes); err != nil {
-		return err
-	}
-	return nil
+	return evpool.evidenceStore.Set(key, evBytes)
 }
 
 func (evpool *Pool) removePendingEvidence(evidence types.Evidence) {
@@ -290,29 +293,29 @@ func (evpool *Pool) removePendingEvidence(evidence types.Evidence) {
 // listEvidence lists up to maxNum pieces of evidence for the given prefix key.
 // It is wrapped by PriorityEvidence and PendingEvidence for convenience.
 // If maxNum is -1, there's no cap on the size of returned evidence.
-func (evpool *Pool) listEvidence(prefixKey byte, maxNum int64) (evidence []types.Evidence) {
+func (evpool *Pool) listEvidence(prefixKey byte, maxNum int64) (evidence []types.Evidence, error error) {
 	var count int64
 	iter, err := dbm.IteratePrefix(evpool.evidenceStore, []byte{prefixKey})
 	if err != nil {
-		panic(err)
+		return nil, ErrDatabase{err}
 	}
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		val := iter.Value()
 
 		if count == maxNum {
-			return evidence
+			return evidence, nil
 		}
 		count++
 
 		var ev types.Evidence
 		err := cdc.UnmarshalBinaryBare(val, &ev)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		evidence = append(evidence, ev)
 	}
-	return evidence
+	return evidence, nil
 }
 
 func (evpool *Pool) removeEvidenceFromList(
